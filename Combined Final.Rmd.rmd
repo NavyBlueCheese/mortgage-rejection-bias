@@ -1,6 +1,6 @@
 ---
 title: "Disproportionate Impact of Negative Credit Signals on Mortgage Rejection"
-author: "Group 2"
+author: Navy
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output: html_document
 ---
