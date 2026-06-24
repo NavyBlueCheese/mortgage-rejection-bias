@@ -1,10 +1,10 @@
 # Disproportionate Impact of Negative Credit Signals on Mortgage Rejection
 
-This is a group project (Group 2) looking at whether negative credit history hits Black women applicants harder when it comes to mortgage rejections — like, does having a bankruptcy or late payments on your record push up your rejection odds more if you're a Black woman compared to everyone else?
+This is a university project looking at whether negative credit history hits Black women applicants harder when it comes to mortgage rejections, like, does having a bankruptcy or late payments on your record push up your rejection odds more if you're a Black woman compared to everyone else?
 
 ## What we did
 
-We used HMDA mortgage loan data and ran logit regressions to test this. The main thing we're looking at is the interaction between being a Black female applicant and various negative credit/mortgage signals (late payments, bankruptcy records, no prior mortgage history, etc.).
+We used HMDA mortgage loan data and ran logit regressions to test this. The main thing we're looking at is the interaction between being a Black female applicant and various negative credit/mortgage signals (late payments, bankruptcy records, no prior mortgage history, etc.)
 
 The models compare a baseline logit with a version that includes interaction terms so we can see if those negative signals "hit harder" for Black women specifically. We also computed average marginal effects and predicted probabilities to make the results more interpretable.
 
@@ -24,4 +24,4 @@ R, with `haven`, `dplyr`, `ggplot2`, `stargazer`, `margins`, and `AER`.
 
 ## Key takeaway
 
-Black women face higher rejection rates on average, and some negative credit signals appear to increase their rejection probability more than for other applicants — though results vary by signal type.
+Black women face higher rejection rates on average, and some negative credit signals appear to increase their rejection probability more than for other applicants, though results vary by signal type.
