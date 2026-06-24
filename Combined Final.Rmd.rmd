@@ -1,0 +1,489 @@
+---
+title: "Disproportionate Impact of Negative Credit Signals on Mortgage Rejection"
+author: "Group 2"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(haven)
+library(dplyr)
+library(ggplot2)
+library(stargazer)
+library(margins)
+library(tidyr)
+library(AER)
+```
+
+#Research Question
+
+Do negative credit and mortgage performance signals affect mortgage rejection probabilities more disproportionately for Black women applicants than for other applicants?
+
+------------------------------------------------------------------------
+
+#Hypothesis
+
+**Null Hypothesis (H0):**  
+There is no significant difference in the impact of negative credit and mortgage performance signals on mortgage rejection probabilities between Black women applicants and other gender and race groups.
+
+**Alternative Hypothesis (H1):**  
+Negative credit and mortgage performance signals increase mortgage rejection probabilities more for Black women applicants than for other gender and race groups.
+
+------------------------------------------------------------------------
+
+#Regression Model
+
+The empirical model estimated in this study is:
+
+$$
+\Pr(\text{Reject}_i = 1 \mid X_i)
+= \Lambda\!\left(\beta_0 + \beta_1 \text{BlackFemale}_i + \beta_2 \text{NegSignal}_i + \beta_3 (\text{BlackFemale}_i \times \text{NegSignal}_i) + \mathbf{X}_i'\gamma \right)
+$$
+
+Where:
+
+- **Reject**: Indicator equal to 1 if the mortgage application is rejected  
+- **BlackFemale**: Indicator for Black female applicants  
+- **NegSignal**: Negative credit or mortgage performance indicators  
+- **X**: Control variables including employment stability and credit screening
+- \(\Lambda(\cdot)\): logistic CDF mapping the index to a probability
+
+------------------------------------------------------------------------
+
+#Data Cleaning
+
+```{r data-cleaning}
+loan <- read_dta("Loan.dta")
+
+vars_used <- c(
+  "reject", "black", "male",
+  "emp", "review",
+  "mortlat1", "mortlat2", "mortno",
+  "pubrec", "chist", "gdlin",
+  "loanamt"
+)
+
+loan <- loan %>% select(all_of(vars_used))
+
+loan <- loan %>% filter(
+  !is.na(reject), !is.na(black), !is.na(male), !is.na(emp),
+  !is.na(mortlat1), !is.na(mortlat2), !is.na(mortno),
+  !is.na(pubrec), !is.na(chist), !is.na(gdlin), !is.na(loanamt)
+)
+
+loan_mean <- mean(loan$loanamt)
+loan_sd   <- sd(loan$loanamt)
+
+loan <- loan %>%
+  filter(loanamt >= loan_mean - 3 * loan_sd,
+         loanamt <= loan_mean + 3 * loan_sd)
+
+loan <- loan %>%
+  mutate(
+    black_female = ifelse(black == 1 & male == 0, 1, 0),
+    reject_num = ifelse(reject %in% c(1, "1", "yes", "Yes", "Y"), 1, 0),
+    mortlat1 = as.integer(mortlat1 == 1),
+    mortlat2 = as.integer(mortlat2 == 1),
+    mortno   = as.integer(mortno == 1),
+    pubrec   = as.integer(pubrec == 1),
+    chist    = as.integer(chist == 1),
+    gdlin    = as.integer(gdlin == 1),
+    emp      = as.numeric(emp)
+  )
+
+summary(loan)
+```
+
+------------------------------------------------------------------------
+
+#Descriptive Statistics
+
+##Sample Overview
+
+```{r sample-overview}
+sample_summary <- loan %>%
+  summarise(
+    N = n(),
+    rejection_rate = mean(reject_num) * 100,
+    black_female_share = mean(black_female) * 100,
+    mortlat1_share = mean(mortlat1) * 100,
+    mortlat2_share = mean(mortlat2) * 100,
+    mortno_share = mean(mortno) * 100,
+    pubrec_share = mean(pubrec) * 100,
+    gdlin_share = mean(gdlin) * 100,
+    avg_emp = mean(emp)
+  )
+
+sample_summary
+```
+
+This table summarizes the overall sample used in the analysis. The mortgage rejection rate provides a baseline against which group-level differences can be compared. The prevalence of negative credit and mortgage performance signals highlights how common adverse underwriting indicators are in the sample.
+
+---
+
+##Group Comparison: Black Women vs Other Applicants
+
+```{r group-comparison}
+group_stats <- loan %>%
+  group_by(black_female) %>%
+  summarise(
+    N = n(),
+    rejection_rate = mean(reject_num) * 100,
+    mortlat1_rate = mean(mortlat1) * 100,
+    mortlat2_rate = mean(mortlat2) * 100,
+    mortno_rate = mean(mortno) * 100,
+    pubrec_rate = mean(pubrec) * 100,
+    gdlin_rate = mean(gdlin) * 100,
+    avg_emp = mean(emp)
+  )
+
+group_stats
+```
+
+This table compares Black women applicants with all other applicants. Differences in rejection rates and the distribution of negative signals provide initial evidence on whether Black women face systematically different lending outcomes or risk profiles prior to conditioning on other factors.
+
+---
+
+##Descriptive Table for Report
+
+```{r stargazer-desc}
+stargazer(
+  group_stats,
+  type = "text",
+  summary = FALSE,
+  title = "Descriptive Statistics by Applicant Group",
+  digits = 2
+)
+```
+
+
+##Visual Evidence
+
+###Mortgage Rejection Rates by Group
+
+```{r fig-reject}
+ggplot(group_stats,
+       aes(x = factor(black_female, labels = c("Other Applicants", "Black Women")),
+           y = rejection_rate)) +
+  geom_col(fill = "skyblue") +
+  labs(title = "Mortgage Rejection Rates by Applicant Group",
+       x = "Applicant Group",
+       y = "Rejection Rate (%)") +
+  theme_minimal()
+```
+
+Black women experience higher mortgage rejection rates on average compared to other applicants >> differences persist after controlling for risk factors
+
+
+### Distribution of Negative Signals by Group
+
+```{r fig-negative-signals}
+neg_long <- loan %>%
+  group_by(black_female) %>%
+  summarise(
+    OneLate = mean(mortlat1) * 100,
+    MultipleLate = mean(mortlat2) * 100,
+    NoHistory = mean(mortno) * 100,
+    Bankruptcy = mean(pubrec) * 100
+  ) %>%
+  tidyr::pivot_longer(
+    cols = c(OneLate, MultipleLate, NoHistory, Bankruptcy),
+    names_to = "Signal",
+    values_to = "Rate"
+  )
+
+ggplot(neg_long,
+       aes(x = factor(black_female, labels = c("Other Applicants", "Black Women")),
+           y = Rate,
+           fill = Signal)) +
+  geom_col(position = "dodge") +
+  labs(title = "Negative Credit and Mortgage Signals by Group",
+       x = "Applicant Group",
+       y = "Rate (%)",
+       fill = "Negative Signal") +
+  theme_minimal()
+```
+
+This figure illustrates that Black women are more likely to exhibit certain negative signals, though differences vary across signal types. These descriptive patterns motivate the interaction analysis in the regression section, which tests whether such signals are penalized differently across groups.
+
+
+### Employment Stability by Group
+
+```{r fig-emp}
+ggplot(loan,
+       aes(x = factor(black_female, labels = c("Other Applicants", "Black Women")),
+           y = emp)) +
+  geom_boxplot(fill = "gray") +
+  labs(title = "Employment Stability by Applicant Group",
+       x = "Applicant Group",
+       y = "Years Employed") +
+  theme_minimal()
+```
+
+
+------------------------------------------------------------------------
+
+#Results Interpretation
+
+```{r regression-analysis}
+m1 <- glm(
+  reject_num ~ black_female +
+    mortlat1 + mortlat2 + mortno + pubrec +
+    gdlin + chist + emp,
+  data = loan,
+  family = binomial(link = "logit")
+)
+
+m2 <- glm(
+  reject_num ~ black_female +
+    mortlat1 + mortlat2 + mortno + pubrec +
+    black_female:mortlat1 +
+    black_female:mortlat2 +
+    black_female:pubrec +
+    gdlin + chist + emp,
+  data = loan,
+  family = binomial(link = "logit")
+)
+
+summary(m1)
+summary(m2)
+```
+
+```{r stargazer-regression}
+stargazer(
+  m1, m2,
+  type = "text",
+  title = "Logit Models of Mortgage Rejection",
+  column.labels = c("Baseline", "Interaction Model"),
+  dep.var.labels = "Rejected (1 = yes)",
+  keep.stat = c("n", "ll", "aic"),
+  digits = 3
+)
+```
+
+##Interpreting interaction terms
+
+The interaction terms capture whether negative signals are associated with a larger increase in rejection probability for Black women relative to others. In the interaction model, the total effect of a negative signal for Black women is the sum of the main signal coefficient and the interaction coefficient.
+
+```{r interaction-coefs}
+coef_table <- summary(m2)$coefficients
+coef_table
+
+# Extract the key interaction estimates and p-values (for quick checking)
+key_terms <- c("black_female:mortlat1", "black_female:mortlat2", "black_female:pubrec")
+key_results <- coef_table[rownames(coef_table) %in% key_terms, , drop = FALSE]
+key_results
+```
+
+```{r combined-logit-effects}
+# ths is just log-odds units not probability units
+b <- coef(m2)
+
+combined_effects <- data.frame(
+  signal = c("mortlat1", "mortlat2", "pubrec"),
+  effect_other = c(b["mortlat1"], b["mortlat2"], b["pubrec"]),
+  interaction = c(b["black_female:mortlat1"], b["black_female:mortlat2"], b["black_female:pubrec"]),
+  effect_black_women = c(b["mortlat1"] + b["black_female:mortlat1"],
+                         b["mortlat2"] + b["black_female:mortlat2"],
+                         b["pubrec"]   + b["black_female:pubrec"])
+)
+
+combined_effects
+```
+
+##Average Marginal Effects (AME)
+
+Logit coefficients are in log-odds units, so we compute marginal effects to interpret results in probability terms. The AME summarizes, on average, how each variable changes the predicted probability of rejection.
+
+```{r ame-overall}
+ame_m2 <- margins(m2)
+summary(ame_m2)
+```
+
+###Group-specific marginal effects for negative signals
+
+To directly test disproportionate impacts, we compute the marginal effect of each negative signal separately for Black women and for other applicants.
+
+```{r ame-by-group}
+ame_by_group <- margins(
+  m2,
+  variables = c("mortlat1", "mortlat2", "pubrec"),
+  at = list(black_female = c(0, 1))
+)
+
+summary(ame_by_group)
+```
+
+##Predicted probabilities
+
+This section creates representative applicant profiles and predicts rejection probabilities. We hold controls at typical values and toggle negative signals on and off.
+
+```{r predicted-probabilities-scenarios}
+typ_emp   <- mean(loan$emp, na.rm = TRUE)
+typ_gdlin <- round(mean(loan$gdlin, na.rm = TRUE))
+typ_chist <- round(mean(loan$chist, na.rm = TRUE))
+
+scenarios <- expand.grid(
+  black_female = c(0, 1),
+  mortlat1 = c(0, 1),
+  mortlat2 = c(0, 1),
+  pubrec   = c(0, 1),
+  mortno   = 0,
+  gdlin = typ_gdlin,
+  chist = typ_chist,
+  emp = typ_emp
+)
+
+
+scenarios$pred_reject <- predict(m2, newdata = scenarios, type = "response")
+
+scenarios %>%
+  arrange(mortlat2, pubrec, mortlat1, black_female) %>%
+  head(24)
+```
+
+###Disproportionate penalty calculation
+
+For each signal, compute:
+- Effect of signal for others: P(reject | signal=1, group=0) − P(reject | signal=0, group=0)
+- Effect of signal for Black women: P(reject | signal=1, group=1) − P(reject | signal=0, group=1)
+- Difference in these effects (a “difference in differences” on probabilities)
+
+```{r disproportionate-penalty}
+compute_penalty <- function(signal_name) {
+  base <- data.frame(
+    black_female = c(0, 0, 1, 1),
+    mortlat1 = 0, mortlat2 = 0, pubrec = 0,
+    mortno = 0,
+    gdlin = typ_gdlin, chist = typ_chist, emp = typ_emp
+  )
+  base[[signal_name]] <- c(0, 1, 0, 1)
+
+  base$pred <- predict(m2, newdata = base, type = "response")
+
+  p_other_off <- base$pred[1]
+  p_other_on  <- base$pred[2]
+  p_bw_off    <- base$pred[3]
+  p_bw_on     <- base$pred[4]
+
+  eff_other <- p_other_on - p_other_off
+  eff_bw    <- p_bw_on - p_bw_off
+  diffdiff  <- eff_bw - eff_other
+
+  data.frame(
+    signal = signal_name,
+    other_off = p_other_off,
+    other_on  = p_other_on,
+    bw_off    = p_bw_off,
+    bw_on     = p_bw_on,
+    effect_other = eff_other,
+    effect_black_women = eff_bw,
+    disproportionate_effect = diffdiff
+  )
+}
+
+pen_mortlat1 <- compute_penalty("mortlat1")
+pen_mortlat2 <- compute_penalty("mortlat2")
+pen_pubrec   <- compute_penalty("pubrec")
+
+penalties <- bind_rows(pen_mortlat1, pen_mortlat2, pen_pubrec)
+penalties
+```
+
+### Plot: predicted probabilities by group for each signal (one-at-a-time)
+
+```{r plot-probabilities}
+plot_df <- penalties %>%
+  select(signal, other_off, other_on, bw_off, bw_on) %>%
+  pivot_longer(cols = -signal, names_to = "scenario", values_to = "prob") %>%
+  mutate(
+    group = ifelse(grepl("^bw_", scenario), "Black Women", "Other Applicants"),
+    signal_state = ifelse(grepl("_on$", scenario), "Signal = 1", "Signal = 0")
+  )
+
+ggplot(plot_df, aes(x = signal_state, y = prob, group = group, color = group)) +
+  geom_point(size = 2) +
+  geom_line() +
+  facet_wrap(~ signal, scales = "free_y") +
+  labs(
+    title = "Predicted Rejection Probabilities by Group and Negative Signal",
+    x = "Negative signal status",
+    y = "Predicted probability of rejection",
+    color = "Applicant group"
+  ) +
+  theme_minimal()
+```
+
+##Interpretation of Logit Model Results
+- Negative credit signal: Negative mortgage and credit performance signals like late mortgage payments are associated with higher probabilities of mortgage rejection > hold employment stability and credit screening variables constant
+- Black female and NegSignal interaction: Positive > the same negative signal leads to a larger increase in the probability of rejection for Black women applicants
+- Marginal effect interpretation: while negative signals increase rejection probabilities for all applicants the increase is larger for black women.Pattern is consistent across multiple negative signal indicators
+- Employment stability: larger employment stability is associated with a lower probability of mortgage rejection > constant
+
+##Predicted probability interpretation
+Predicted probabiliyies are compared across groups
+$$\Delta P = \Delta P_{\text{BlackFemale}=1} - \Delta P_{\text{BlackFemale}=0}
+$$
+Increase in rejection probability associated with a negative signal is larger for Black women than for other applicants >> disproportionate penalty linked to adverse credit information
+
+------------------------------------------------------------------------
+
+#Identification
+
+```{r iv-2sls, message=FALSE, warning=FALSE}
+library(AER)
+library(lmtest)
+library(sandwich)
+library(stargazer)
+
+first_stage <- lm(
+  mortlat2 ~ review + black_female + emp + gdlin + chist + pubrec + mortlat1 + mortno,
+  data = loan
+)
+summary(first_stage)
+
+iv_model <- ivreg(
+  reject_num ~ mortlat2 + black_female + emp + gdlin + chist + pubrec + mortlat1 + mortno |
+    review    + black_female + emp + gdlin + chist + pubrec + mortlat1 + mortno,
+  data = loan
+)
+summary(iv_model, diagnostics = TRUE)
+
+
+iv_interaction <- ivreg(
+  reject_num ~ mortlat2 * black_female + emp + gdlin + chist + pubrec + mortlat1 + mortno |
+    review * black_female    + emp + gdlin + chist + pubrec + mortlat1 + mortno,
+  data = loan
+)
+summary(iv_interaction, diagnostics = TRUE)
+
+iv_se  <- sqrt(diag(vcovHC(iv_model, type = "HC1")))
+ivint_se <- sqrt(diag(vcovHC(iv_interaction, type = "HC1")))
+
+
+stargazer(
+  m2, iv_interaction,
+  type = "text",
+  title = "Comparison of Logit Interaction Model and IV (2SLS / IV-LPM) Interaction Model",
+  column.labels = c("Logit (Interaction)", "IV (2SLS / IV-LPM Interaction)"),
+  dep.var.labels = "Rejected (1 = yes)",
+  se = list(NULL, ivint_se),
+  keep.stat = c("n"),
+  digits = 3
+)
+```
+
+------------------------------------------------------------------------
+
+#Member contribution
+정율: Data cleaning
+Kamilla Perepelkina: Descriptive Stat
+Nunnapat Pulsawas: Result Interpretation + Editing and Combining all parts
+Martyna Monika Marszalkowska: Identification
+
