@@ -10,13 +10,13 @@ The models compare a baseline logit with a version that includes interaction ter
 
 ## Variables
 
-- `reject` — whether the application was rejected (our outcome)
-- `black_female` — indicator for Black female applicants
-- `mortlat1` / `mortlat2` — one or multiple late mortgage payments
-- `mortno` — no prior mortgage history
-- `pubrec` — public bankruptcy record
-- `chist` / `gdlin` — credit history and guideline flags
-- `emp` — employment stability (years employed)
+- `reject` : whether the application was rejected (our outcome)
+- `black_female` : indicator for Black female applicants
+- `mortlat1` / `mortlat2` : one or multiple late mortgage payments
+- `mortno` : no prior mortgage history
+- `pubrec` : public bankruptcy record
+- `chist` / `gdlin` : credit history and guideline flags
+- `emp` : employment stability (years employed)
 
 ## Tools used
 
